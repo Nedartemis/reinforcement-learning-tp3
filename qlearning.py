@@ -1,14 +1,14 @@
-from collections import defaultdict
 import random
 import typing as t
-import numpy as np
-import gymnasium as gym
+from collections import defaultdict
 
+import gymnasium as gym
+import numpy as np
 
 Action = int
 State = int
 Info = t.TypedDict("Info", {"prob": float, "action_mask": np.ndarray})
-QValues = t.DefaultDict[int, t.DefaultDict[Action, float]]
+QValues = t.DefaultDict[State, t.DefaultDict[Action, float]]
 
 
 class QLearningAgent:
@@ -24,11 +24,13 @@ class QLearningAgent:
 
         You shoud not use directly self._qvalues, but instead of its getter/setter.
         """
-        self.legal_actions = legal_actions
-        self._qvalues: QValues = defaultdict(lambda: defaultdict(int))
+
         self.learning_rate = learning_rate
         self.epsilon = epsilon
         self.gamma = gamma
+        self.legal_actions = legal_actions
+
+        self._qvalues: QValues = defaultdict(lambda: defaultdict(State))
 
     def get_qvalue(self, state: State, action: Action) -> float:
         """
@@ -49,6 +51,9 @@ class QLearningAgent:
         """
         value = 0.0
         # BEGIN SOLUTION
+        value = max(
+            self.get_qvalue(state=state, action=action) for action in self.legal_actions
+        )
         # END SOLUTION
         return value
 
@@ -61,11 +66,17 @@ class QLearningAgent:
            TD_error(s', a) = TD_target(s') - Q_old(s, a)
            Q_new(s, a) := Q_old(s, a) + learning_rate * TD_error(s', a)
         """
-        q_value = 0.0
+        q_new = 0.0
         # BEGIN SOLUTION
+        rewardf: float = reward  # type: ignore
+        q_old = self.get_qvalue(state=state, action=action)
+
+        td_target_sp = rewardf + self.gamma * self.get_value(state=next_state)
+        td_error = td_target_sp - q_old
+        q_new = q_old + self.learning_rate * td_error
         # END SOLUTION
 
-        self.set_qvalue(state, action, q_value)
+        self.set_qvalue(state, action, q_new)
 
     def get_best_action(self, state: State) -> Action:
         """
@@ -88,9 +99,13 @@ class QLearningAgent:
               To pick True or False with a given probablity, generate uniform number in [0, 1]
               and compare it with your probability
         """
-        action = self.legal_actions[0]
+        action: Action = -1
 
         # BEGIN SOLUTION
+        if random.uniform(0, 1) < self.epsilon:  # random action
+            action = random.choice(self.legal_actions)
+        else:  # best policy action
+            action = self.get_best_action(state=state)
         # END SOLUTION
 
         return action

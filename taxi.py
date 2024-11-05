@@ -18,57 +18,153 @@ A la fin, vous devez rendre un rapport qui explique vos choix d'implémentation
 et vos résultats (max 1 page).
 """
 
+import os
 import typing as t
+
 import gymnasium as gym
+import imageio
+import matplotlib.pyplot as plt
 import numpy as np
-from qlearning import QLearningAgent
+import pandas as pd
+from PIL import Image, ImageDraw, ImageFont
+from qlearning import Info, QLearningAgent
 from qlearning_eps_scheduling import QLearningAgentEpsScheduling
-from sarsa import SARSAAgent
+from sarsa import SarsaAgent
+from tqdm import tqdm
 
 
-env = gym.make("Taxi-v3", render_mode="rgb_array")
-n_actions = env.action_space.n  # type: ignore
+def custom_frame(
+    frame,
+    state: int,
+    reward: float,
+    total_reward: float,
+    action: int,
+    info: Info,
+    savefile: t.Optional[str] = None,
+) -> np.ndarray:
+    frame = Image.fromarray(frame)
+    draw = ImageDraw.Draw(frame)
+
+    # Define the text and position
+    text = f"State: {state}, Action: {action}, Reward: {reward:.2f}, Total Reward: {total_reward:.2f}, Info: {info}"
+    draw.text((10, 10), text, fill="white")
+
+    if savefile is not None:
+        frame.save(savefile)
+
+    return np.array(frame)
 
 
 #################################################
 # 1. Play with QLearningAgent
 #################################################
 
-agent = QLearningAgent(
-    learning_rate=0.5, epsilon=0.25, gamma=0.99, legal_actions=list(range(n_actions))
-)
 
-
-def play_and_train(env: gym.Env, agent: QLearningAgent, t_max=int(1e4)) -> float:
+def play_and_train(
+    env: gym.Env, agent: QLearningAgent, id_video: int, t_max=200, last: bool = False
+) -> float:
     """
     This function should
     - run a full game, actions given by agent.getAction(s)
     - train agent using agent.update(...) whenever possible
     - return total rewardb
     """
-    total_reward: t.SupportsFloat = 0.0
-    s, _ = env.reset()
+    total_reward: float = 0.0
+    info: Info
+    current_state, info = env.reset()
 
-    for _ in range(t_max):
+    record_video: bool = last
+
+    if record_video:
+        env = gym.wrappers.RecordVideo(
+            env=env,
+            video_folder=os.path.abspath("videos"),
+            name_prefix="test-video",
+        )
+        env.episode_id = id_video
+        env.start_video_recorder()
+        vr = env.video_recorder
+        assert vr is not None
+
+    def convert_last_frame():
+        frame = vr.recorded_frames[-1]
+        frame = custom_frame(
+            frame, current_state, rewardf, total_reward, action, info=info
+        )
+        vr.recorded_frames[-1] = frame
+
+    for index in range(t_max):
         # Get agent to pick action given state s
-        a = agent.get_action(s)
+        action = agent.get_action(current_state)
+        next_state, reward, done, _, info = env.step(action)
 
-        next_s, r, done, _, _ = env.step(a)
+        # BEGIN SOLUTION
+        rewardf: float = reward  # type: ignore
+        total_reward += rewardf
+
+        if rewardf > 0:
+            custom_frame(
+                env.render(),
+                state=current_state,
+                action=action,
+                reward=rewardf,
+                total_reward=total_reward,
+                info=info,
+                savefile=f"picture/id-{id_video}-index-{index}.png",
+            )
+
+        if record_video and vr is not None:
+            convert_last_frame()
 
         # Train agent for state s
-        # BEGIN SOLUTION
+        agent.update(
+            state=current_state, action=action, reward=reward, next_state=next_state
+        )
+        current_state = next_state
+
+        if done:
+            break
         # END SOLUTION
+
+    if isinstance(env, gym.wrappers.RecordVideo):
+        convert_last_frame()
+        env.close_video_recorder()
 
     return total_reward
 
 
-rewards = []
-for i in range(1000):
-    rewards.append(play_and_train(env, agent))
-    if i % 100 == 0:
-        print("mean reward", np.mean(rewards[-100:]))
+def test_loop(env: gym.Env, agent, curve_label: str):
 
-assert np.mean(rewards[-100:]) > 0.0
+    rewards = []
+    last = 1000
+    for i in tqdm(range(1, last + 1)):
+        total_reword = play_and_train(
+            env, agent, t_max=200, id_video=i, last=(i > last - 2)
+        )
+        rewards.append(total_reword)
+        if i % 100 == 0:
+            print("mean reward", np.mean(rewards[-100:]))
+
+    df = pd.DataFrame(data={"rewards": rewards})
+    df["rewards_mean"] = df.groupby(df.index // 100)["rewards"].transform("mean")
+
+    df.plot(kind="line")
+    plt.savefig("curves_" + curve_label + ".png")
+
+    # assert np.mean(rewards[-100:]) > 0.0
+
+
+def test_qlearning(env: gym.Env, n_actions: int):
+
+    agent = QLearningAgent(
+        learning_rate=0.5,
+        epsilon=0.25,
+        gamma=0.99,
+        legal_actions=list(range(n_actions)),
+    )
+    test_loop(env, agent, curve_label="qlearning")
+
+
 # TODO: créer des vidéos de l'agent en action
 
 #################################################
@@ -76,17 +172,16 @@ assert np.mean(rewards[-100:]) > 0.0
 #################################################
 
 
-agent = QLearningAgentEpsScheduling(
-    learning_rate=0.5, epsilon=0.25, gamma=0.99, legal_actions=list(range(n_actions))
-)
+def test_qlearning_scheduling(env: gym.Env, n_actions: int):
+    agent = QLearningAgentEpsScheduling(
+        learning_rate=0.5,
+        epsilon=0.25,
+        gamma=0.99,
+        legal_actions=list(range(n_actions)),
+    )
 
-rewards = []
-for i in range(1000):
-    rewards.append(play_and_train(env, agent))
-    if i % 100 == 0:
-        print("mean reward", np.mean(rewards[-100:]))
+    test_loop(env, agent, curve_label="qlearning_scheduling")
 
-assert np.mean(rewards[-100:]) > 0.0
 
 # TODO: créer des vidéos de l'agent en action
 
@@ -96,10 +191,21 @@ assert np.mean(rewards[-100:]) > 0.0
 ####################
 
 
-agent = SARSAAgent(learning_rate=0.5, gamma=0.99, legal_actions=list(range(n_actions)))
+def test_sarsa(env: gym.Env, n_actions: int):
+    agent = SarsaAgent(
+        learning_rate=0.5, gamma=0.99, legal_actions=list(range(n_actions))
+    )
 
-rewards = []
-for i in range(1000):
-    rewards.append(play_and_train(env, agent))
-    if i % 100 == 0:
-        print("mean reward", np.mean(rewards[-100:]))
+    test_loop(env, agent, curve_label="sarsa")
+
+
+def test():
+    env = gym.make("Taxi-v3", render_mode="rgb_array")
+
+    n_actions = env.action_space.n  # type: ignore
+    test_qlearning_scheduling(env, n_actions)
+    env.close()
+
+
+if __name__ == "__main__":
+    test()
