@@ -1,9 +1,9 @@
-from collections import defaultdict
 import random
 import typing as t
-import numpy as np
-import gymnasium as gym
+from collections import defaultdict
 
+import gymnasium as gym
+import numpy as np
 
 Action = int
 State = int
@@ -55,9 +55,9 @@ class SarsaAgent:
     ):
         """
         You should do your Q-Value update here (s'=next_state):
-           TD_target(s') = R(s, a) + gamma * V(s')
-           TD_error(s', a) = TD_target(s') - Q(s, a)
-           Q_new(s, a) := Q(s, a) + alpha * TD_error(s', a)
+           TD_target(s, a, r, s', a') = r + gamma * Q_old(s', a')
+           TD_error(s, a, r, s', a') = TD_target(s, a, r, s', a') - Q_old(s, a)
+           Q_new(s, a) := Q_old(s, a) + learning_rate * TD_error(s, a, R(s, a), s', a')
         """
         q_value = 0.0
         # BEGIN SOLUTION
