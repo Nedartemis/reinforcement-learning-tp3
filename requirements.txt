@@ -1,0 +1,5 @@
+pygame
+imageio[pyav]
+gymnasium[toy-text]
+moviepy
+pillow
