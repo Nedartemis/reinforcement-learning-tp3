@@ -22,11 +22,10 @@ import os
 import typing as t
 
 import gymnasium as gym
-import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from qlearning import Info, QLearningAgent
 from qlearning_eps_scheduling import QLearningAgentEpsScheduling
 from sarsa import SarsaAgent
@@ -61,7 +60,7 @@ def custom_frame(
 
 
 def play_and_train(
-    env: gym.Env, agent: QLearningAgent, id_video: int, t_max=200, last: bool = False
+    env: gym.Env, agent, label_video: str, id_video: int, t_max=200, last: bool = False
 ) -> float:
     """
     This function should
@@ -79,7 +78,7 @@ def play_and_train(
         env = gym.wrappers.RecordVideo(
             env=env,
             video_folder=os.path.abspath("videos"),
-            name_prefix="test-video",
+            name_prefix=label_video,
         )
         env.episode_id = id_video
         env.start_video_recorder()
@@ -93,7 +92,7 @@ def play_and_train(
         )
         vr.recorded_frames[-1] = frame
 
-    for index in range(t_max):
+    for _ in range(t_max):
         # Get agent to pick action given state s
         action = agent.get_action(current_state)
         next_state, reward, done, _, info = env.step(action)
@@ -101,17 +100,6 @@ def play_and_train(
         # BEGIN SOLUTION
         rewardf: float = reward  # type: ignore
         total_reward += rewardf
-
-        if rewardf > 0:
-            custom_frame(
-                env.render(),
-                state=current_state,
-                action=action,
-                reward=rewardf,
-                total_reward=total_reward,
-                info=info,
-                savefile=f"picture/id-{id_video}-index-{index}.png",
-            )
 
         if record_video and vr is not None:
             convert_last_frame()
@@ -127,31 +115,36 @@ def play_and_train(
         # END SOLUTION
 
     if isinstance(env, gym.wrappers.RecordVideo):
-        convert_last_frame()
         env.close_video_recorder()
 
     return total_reward
 
 
-def test_loop(env: gym.Env, agent, curve_label: str):
+def test_loop(env: gym.Env, agent, label: str):
 
     rewards = []
     last = 1000
     for i in tqdm(range(1, last + 1)):
         total_reword = play_and_train(
-            env, agent, t_max=200, id_video=i, last=(i > last - 2)
+            env, agent, label_video=label, t_max=200, id_video=i, last=(i == last)
         )
         rewards.append(total_reword)
         if i % 100 == 0:
             print("mean reward", np.mean(rewards[-100:]))
 
+    # save all results
     df = pd.DataFrame(data={"rewards": rewards})
     df["rewards_mean"] = df.groupby(df.index // 100)["rewards"].transform("mean")
 
+    # save plots
     df.plot(kind="line")
-    plt.savefig("curves_" + curve_label + ".png")
+    plt.savefig("plot/curves_" + label + ".png")
 
-    # assert np.mean(rewards[-100:]) > 0.0
+    df.iloc[-500:].plot(kind="line")
+    plt.savefig("plot/curves_" + label + "_cut.png")
+
+    # save dataframe
+    df.to_csv("df/df_" + label + ".csv")
 
 
 def test_qlearning(env: gym.Env, n_actions: int):
@@ -162,10 +155,8 @@ def test_qlearning(env: gym.Env, n_actions: int):
         gamma=0.99,
         legal_actions=list(range(n_actions)),
     )
-    test_loop(env, agent, curve_label="qlearning")
+    test_loop(env, agent, label="qlearning")
 
-
-# TODO: créer des vidéos de l'agent en action
 
 #################################################
 # 2. Play with QLearningAgentEpsScheduling
@@ -180,10 +171,7 @@ def test_qlearning_scheduling(env: gym.Env, n_actions: int):
         legal_actions=list(range(n_actions)),
     )
 
-    test_loop(env, agent, curve_label="qlearning_scheduling")
-
-
-# TODO: créer des vidéos de l'agent en action
+    test_loop(env, agent, label="qlearning_scheduling")
 
 
 ####################
@@ -196,16 +184,18 @@ def test_sarsa(env: gym.Env, n_actions: int):
         learning_rate=0.5, gamma=0.99, legal_actions=list(range(n_actions))
     )
 
-    test_loop(env, agent, curve_label="sarsa")
+    test_loop(env, agent, label="sarsa")
 
 
-def test():
+def test(func):
     env = gym.make("Taxi-v3", render_mode="rgb_array")
 
     n_actions = env.action_space.n  # type: ignore
-    test_qlearning_scheduling(env, n_actions)
+    func(env, n_actions)
     env.close()
 
 
 if __name__ == "__main__":
-    test()
+    test(test_qlearning)
+    test(test_qlearning_scheduling)
+    test(test_sarsa)

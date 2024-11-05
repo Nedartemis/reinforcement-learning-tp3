@@ -59,11 +59,19 @@ class SarsaAgent:
            TD_error(s, a, r, s', a') = TD_target(s, a, r, s', a') - Q_old(s, a)
            Q_new(s, a) := Q_old(s, a) + learning_rate * TD_error(s, a, R(s, a), s', a')
         """
-        q_value = 0.0
+        q_new = 0.0
         # BEGIN SOLUTION
+        ap = self.get_best_action(state=next_state)
+        q_old_sp_ap = self.get_qvalue(state=next_state, action=ap)
+        q_old_s_a = self.get_qvalue(state=state, action=action)
+        rewardf: float = reward  # type: ignore
+
+        td_target = rewardf + self.gamma * q_old_sp_ap
+        td_error = td_target - q_old_s_a
+        q_new = q_old_s_a + self.learning_rate * td_error
         # END SOLUTION
 
-        self.set_qvalue(state, action, q_value)
+        self.set_qvalue(state, action, q_new)
 
     def get_best_action(self, state: State) -> Action:
         """
@@ -83,6 +91,7 @@ class SarsaAgent:
         action = self.legal_actions[0]
 
         # BEGIN SOLUTION
+        action = self.get_best_action(state=state)
         # END SOLUTION
 
         return action
